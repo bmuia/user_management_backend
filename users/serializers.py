@@ -34,3 +34,10 @@ class LoginSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ('email', 'password')
+
+class UserProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ('email', 'is_verified', 'is_active', 'is_verified', 'is_staff', 'password')
+
+        
