@@ -13,7 +13,7 @@ signer = Signer()
 def send_verification_email(sender, instance, created, **kwargs):
     if created and not instance.is_verified:
         token = signer.sign(instance.email)
-        frontend_url = "http://localhost:5173/verify-email" 
+        frontend_url = settings.FRONTEND_URL
         verify_url = f"{frontend_url}?token={token}"
 
         send_mail(
