@@ -136,6 +136,8 @@ class UserProfileByID(generics.RetrieveUpdateDestroyAPIView):
 
 
 class VerifyEmailView(APIView):
+    permission_classes = [AllowAny]
+
     def get(self, request):
         token = request.GET.get('token')
         if not token:
@@ -159,6 +161,7 @@ class VerifyEmailView(APIView):
 
 
 class PasswordResetView(APIView):
+    permission_classes = [AllowAny]
 
     def post(self, request):
         email = request.data.get('email')
@@ -198,7 +201,10 @@ class PasswordResetView(APIView):
         except User.DoesNotExist:
             return Response({'error': 'User with this email does not exist'}, status=status.HTTP_404_NOT_FOUND)
 
+
 class PasswordResetConfirmView(APIView):
+    permission_classes = [AllowAny]
+
     def post(self, request):
         token = request.data.get('token')
         new_password = request.data.get('new_password')
