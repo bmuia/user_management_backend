@@ -1,0 +1,17 @@
+.env
+
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+
+/**/migrations/
+!/**/migrations/__init__.py
+
+vscode
+
+/myenv
+
+
+
