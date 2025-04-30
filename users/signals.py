@@ -14,7 +14,7 @@ def send_verification_email(sender, instance, created, **kwargs):
     if created and not instance.is_verified:
         token = signer.sign(instance.email)
         frontend_url = settings.FRONTEND_URL
-        verify_url = f"{frontend_url}?token={token}"
+        verify_url = f"{frontend_url}/verify-email/?token={token}"
 
         send_mail(
             subject="Verify your email",
