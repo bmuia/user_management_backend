@@ -1,15 +1,24 @@
+from datetime import datetime, timedelta
 from rest_framework import generics, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, IsAdminUser, AllowAny
 from .serializers import RegistrationSerializer, LoginSerializer, UserProfileSerializer
-from rest_framework_simplejwt.tokens import RefreshToken
-from rest_framework.authentication import authenticate
+from rest_framework_simplejwt.tokens import RefreshToken, TokenError
+from django.contrib.auth import authenticate
 from django.contrib.auth import get_user_model
 from django.core.signing import BadSignature, Signer, TimestampSigner
+from rest_framework_simplejwt.views import TokenRefreshView
+from rest_framework_simplejwt.exceptions import InvalidToken
+from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 from django.conf import settings
 from django.core.mail import send_mail
 from django.utils import timezone
+
+
+
+
+
 
 
 User = get_user_model()
@@ -25,19 +34,15 @@ class RegistrationView(APIView):
 
         if serializer.is_valid():
             user = serializer.save()
-            refresh = RefreshToken.for_user(user)
-            access_token = str(refresh.access_token)
 
             return Response({
-                'message': 'User successfully registered',
-                'email': user.email,
-                'access': access_token,
-                'refresh': str(refresh),
+                'message': 'Registration successful',         
             }, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class LoginView(APIView):
     permission_classes = [AllowAny]
+    
     def post(self, request):
         data = request.data
         serializer = LoginSerializer(data=data)
@@ -52,25 +57,103 @@ class LoginView(APIView):
                 user.save()
                 refresh = RefreshToken.for_user(user)
                 access_token = str(refresh.access_token)
+                refresh_token = str(refresh)
 
-                return Response({
-                    'access': access_token,
-                    'refresh': str(refresh),
+                response = Response({
+                    'message': 'Login successful',
                 }, status=status.HTTP_200_OK)
-            else:
-                return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
+
+                # Set the access token in a cookie
+                response.set_cookie(
+                    key= 'access_token',
+                    value=access_token,
+                    expires=datetime.now(timezone.utc) + timedelta(hours=6),
+                    secure=True,
+                    httponly=True,
+                    samesite='None',
+                )
+
+                # Set the refresh token in a cookie
+                response.set_cookie(
+                    key='refresh_token',
+                    value=refresh_token,
+                    expires=datetime.now(timezone.utc) + timedelta(hours=6),
+                    secure=True,
+                    httponly=True,
+                    samesite='None',
+                )
+                return response
+
+            return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
+
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-class LogoutView(APIView):
-    def post(self,request):
+
+
+class CookieTokenRefreshView(TokenRefreshView):
+    def post(self, request, *args, **kwargs):
+        refresh_token = request.COOKIES.get('refresh_token')
+
+        if refresh_token is None:
+            return Response({'error': 'Refresh token not provided'}, status=status.HTTP_401_UNAUTHORIZED)
+
+        serializer = self.get_serializer(data={'refresh': refresh_token})
+
         try:
-            refresh_token = request.data['refresh']
-            token = RefreshToken(refresh_token)
-            token.blacklist()
-            return Response({'message': 'Successfully logged out'}, status=status.HTTP_205_RESET_CONTENT)
-        except Exception as e:
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            serializer.is_valid(raise_exception=True)
+        except (InvalidToken, TokenError):
+            return Response({'error': 'Invalid or blacklisted refresh token'}, status=status.HTTP_401_UNAUTHORIZED)
+
+        access_token = serializer.validated_data['access']
+
+        response = Response({'access': access_token}, status=status.HTTP_200_OK)
+
+        # Optional: also set access_token as cookie
+        response.set_cookie(
+            key='access_token',
+            value=access_token,
+            expires=datetime.now(timezone.utc) + timedelta(hours=6),
+            secure=True,
+            httponly=True,
+            samesite='None',
+        )
+
+        return response
+
+    
+class CurrentUserView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        serializer = UserProfileSerializer(user)
+        return Response(serializer.data)
+
+
+
+class LogoutView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+
+        response = Response({'message': 'Logout successful'}, status=status.HTTP_200_OK)
+
+        # Access the refresh_token from the cookie
+        refresh_token_cookie = request.COOKIES.get('refresh_token')
+
+        if refresh_token_cookie:
+            try:
+                token = RefreshToken(refresh_token_cookie)
+                token.blacklist()
+            except TokenError:
+                pass  
+
+        print("Deleting cookies")
+        response.delete_cookie('access_token')
+        response.delete_cookie('refresh_token')
+        
+        return response
 
 
 class UserProfileList(generics.ListAPIView):
