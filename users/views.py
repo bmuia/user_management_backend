@@ -42,54 +42,61 @@ class RegistrationView(APIView):
 
 class LoginView(APIView):
     permission_classes = [AllowAny]
-    
+    # Optional: add throttling to limit login attempts
+    # throttle_classes = [LoginThrottle]
+
     def post(self, request):
-        data = request.data
-        serializer = LoginSerializer(data=data)
+        login_data = request.data
+        serializer = LoginSerializer(data=login_data)
 
         if serializer.is_valid():
             email = serializer.validated_data['email']
             password = serializer.validated_data['password']
+
             user = authenticate(request, email=email, password=password)
 
             if user:
+                # Update last login time
                 user.last_login = timezone.now()
                 user.save()
+
+                # Generate tokens
                 refresh = RefreshToken.for_user(user)
                 access_token = str(refresh.access_token)
                 refresh_token = str(refresh)
 
+                # Build response
                 response = Response({
                     'message': 'Login successful',
+
                 }, status=status.HTTP_200_OK)
 
-                # Set the access token in a cookie
+                # Set secure HttpOnly cookies
+                expires_at = timezone.now() + timedelta(hours=6)
                 response.set_cookie(
-                    key= 'access_token',
+                    key='access_token',
                     value=access_token,
-                    expires=datetime.now(timezone.utc) + timedelta(hours=6),
+                    expires=expires_at,
                     secure=True,
                     httponly=True,
                     samesite='None',
+                    path='/',
                 )
-
-                # Set the refresh token in a cookie
                 response.set_cookie(
                     key='refresh_token',
                     value=refresh_token,
-                    expires=datetime.now(timezone.utc) + timedelta(hours=6),
+                    expires=expires_at,
                     secure=True,
                     httponly=True,
                     samesite='None',
+                    path='/',
                 )
+
                 return response
 
             return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
-
 
 class CookieTokenRefreshView(TokenRefreshView):
     def post(self, request, *args, **kwargs):
