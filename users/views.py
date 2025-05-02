@@ -136,6 +136,18 @@ class CurrentUserView(APIView):
         user = request.user
         serializer = UserProfileSerializer(user)
         return Response(serializer.data)
+    
+    def put(self, request):
+        user = request.user
+        serializer = UserProfileSerializer(user, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+    
+    def delete(self, request):
+        user = request.user
+        user.delete()
+        return Response({"message": "User deleted."}, status=status.HTTP_204_NO_CONTENT)
 
 
 
