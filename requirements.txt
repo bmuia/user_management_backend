@@ -4,6 +4,7 @@ click==8.1.8
 dj-database-url==2.3.0
 Django==5.2
 django-cors-headers==4.7.0
+django-user-agents==0.4.0
 djangorestframework==3.16.0
 djangorestframework_simplejwt==5.5.0
 gunicorn==23.0.0
@@ -12,7 +13,11 @@ packaging==25.0
 psycopg==3.2.6
 PyJWT==2.9.0
 python-dotenv==1.1.0
+PyYAML==6.0.2
 sqlparse==0.5.3
 typing_extensions==4.13.2
+ua-parser==1.0.1
+ua-parser-builtins==0.18.0.post1
+user-agents==2.2.0
 uvicorn==0.34.2
 whitenoise==6.9.0

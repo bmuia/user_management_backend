@@ -6,7 +6,7 @@ from .views import (
     UserProfileList,
     VerifyEmailView,
     PasswordResetConfirmView,
-    PasswordResetView,UserProfileByID,
+    PasswordResetView,
     UserProfileDetail,
     DeactivateAccountView,
     CookieTokenRefreshView,
@@ -21,7 +21,7 @@ urlpatterns = [
     path('token/refresh/', CookieTokenRefreshView.as_view(), name='token_refresh'),
     path('me/', CurrentUserView.as_view(), name='current_user'),
     path('logout/', LogoutView.as_view(), name='logout'),
-    path('profile/<int:pk>/', UserProfileByID.as_view(), name='user_profile_edit'),
+
     path('profiles/', UserProfileList.as_view(), name='user_profile'),
     path('verify-email/', VerifyEmailView.as_view(), name='verify_email'),
     path('reset-password/', PasswordResetView.as_view(), name='password_reset'),    
