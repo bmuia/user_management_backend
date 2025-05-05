@@ -4,6 +4,8 @@ from rest_framework.permissions import IsAuthenticated,IsAdminUser
 from rest_framework import status
 from .serializers import MessageSerializer
 from .models import Message
+from userlogs.utils import log_user_action
+
 
 class ContactAdminView(APIView):
     permission_classes = [IsAuthenticated]
@@ -12,6 +14,8 @@ class ContactAdminView(APIView):
         serializer = MessageSerializer(data=request.data)
         if serializer.is_valid():
             serializer.save(user=request.user)
+            # Log the action
+            log_user_action(request.user, 'Contacted admin')
             return Response({"message": "Message sent!"}, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
