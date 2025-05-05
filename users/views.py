@@ -15,6 +15,7 @@ from django.core.mail import send_mail
 from django.utils import timezone
 from userlogs.utils import log_user_action
 
+
 User = get_user_model()
 signer = Signer()
 
@@ -180,7 +181,7 @@ class PasswordResetView(APIView):
         try:
             user = User.objects.get(email=email)
             token = TimestampSigner().sign(user.email)
-            reset_url = f"{settings.FRONTEND_URL}/password-reset-confirm?token={token}"
+            reset_url = f"{settings.FRONTEND_URL}password-reset-confirm?token={token}"
 
             message = f'Click to reset your password: {reset_url}\n\nLink expires in 15 minutes.'
 
@@ -197,6 +198,9 @@ class PasswordResetView(APIView):
 
         except User.DoesNotExist:
             return Response({'error': 'User with this email does not exist'}, status=status.HTTP_404_NOT_FOUND)
+        
+        except Exception as e:
+            return Response({'error': 'Failed to send password reset email'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class PasswordResetConfirmView(APIView):
