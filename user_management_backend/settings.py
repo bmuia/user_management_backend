@@ -44,6 +44,15 @@ CORS_ALLOW_CREDENTIALS = True
 
 CSRF_TRUSTED_ORIGINS = os.getenv('CSRF_TRUSTED_ORIGINS', '').split(',')
 
+CORS_ALLOW_HEADERS = [
+    "content-type",
+    "accept",
+    "authorization",
+    "x-csrftoken",
+    "access-control-allow-origin",
+]
+
+
 
 # Application definition
 
