@@ -38,6 +38,7 @@ class LoginSerializer(serializers.ModelSerializer):
 class UserProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ('email', 'is_verified', 'is_active', 'is_verified', 'is_staff', 'password')
+        fields = ('email', 'is_verified', 'is_active', 'is_staff', 'is_superuser', 'last_login', 'date_joined')
+        read_only_fields = ('is_active', 'is_verified', 'is_staff')
 
         
