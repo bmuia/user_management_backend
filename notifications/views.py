@@ -7,6 +7,7 @@ from .models import Message
 from userlogs.utils import log_user_action
 
 
+
 class ContactAdminView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -26,3 +27,4 @@ class AdminMessageListView(APIView):
         messages = Message.objects.all().order_by('-created_at')
         serializer = MessageSerializer(messages, many=True)
         return Response(serializer.data)
+
