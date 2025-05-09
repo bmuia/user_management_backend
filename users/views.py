@@ -54,8 +54,8 @@ class LoginView(APIView):
                 response = Response({'message': 'Login successful'}, status=status.HTTP_200_OK)
 
                 expires_at = timezone.now() + timedelta(hours=6)
-                response.set_cookie('access_token', access_token, expires=expires_at, secure=True, httponly=True, samesite='None', path='/')
-                response.set_cookie('refresh_token', refresh_token, expires=expires_at, secure=True, httponly=True, samesite='None', path='/')
+                response.set_cookie('access_token', access_token, expires=expires_at, secure=False, httponly=True, samesite='Lax', path='/')
+                response.set_cookie('refresh_token', refresh_token, expires=expires_at, secure=False, httponly=True, samesite='Lax', path='/')
                 return response
 
             return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
