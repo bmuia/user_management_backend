@@ -33,7 +33,7 @@ SECRET_KEY = os.getenv('DJANGO_SECRET')
 FRONTEND_URL = os.getenv('FRONTEND_URL')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = False if ENV == 'production' else True
+DEBUG = True
 
 ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', '').split(',')
 
