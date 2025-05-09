@@ -1,36 +1,36 @@
+# Standard Imports
 from datetime import datetime, timedelta
+
+# Third-party Imports
 from rest_framework import generics, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, IsAdminUser, AllowAny
-from .serializers import RegistrationSerializer, LoginSerializer, UserProfileSerializer
 from rest_framework_simplejwt.tokens import RefreshToken, TokenError
-from django.contrib.auth import authenticate, get_user_model
-from django.core.signing import BadSignature, Signer, TimestampSigner
 from rest_framework_simplejwt.views import TokenRefreshView
 from rest_framework_simplejwt.exceptions import InvalidToken
 from rest_framework_simplejwt.serializers import TokenRefreshSerializer
-from django.conf import settings
 from django.core.mail import send_mail
 from django.utils import timezone
+from django.conf import settings
+from django.contrib.auth import authenticate, get_user_model
+from django.core.signing import BadSignature, Signer, TimestampSigner
+from django.db import transaction
+from django.db.models import F
+
+
+
+# Local Imports
+from .serializers import RegistrationSerializer, LoginSerializer, UserProfileSerializer
 from userlogs.utils import log_user_action
 
-
+# Initialize User and Signer
 User = get_user_model()
 signer = Signer()
 
-
-class RegistrationView(APIView):
-    permission_classes = [AllowAny]
-
-    def post(self, request):
-        serializer = RegistrationSerializer(data=request.data)
-        if serializer.is_valid():
-            user = serializer.save()
-            log_user_action(user, 'User registered', request)
-            return Response({'message': 'Registration successful'}, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
+# ================================
+# Authentication and User Logic
+# ================================
 
 class LoginView(APIView):
     permission_classes = [AllowAny]
@@ -80,27 +80,6 @@ class CookieTokenRefreshView(TokenRefreshView):
         return response
 
 
-class CurrentUserView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request):
-        serializer = UserProfileSerializer(request.user)
-        log_user_action(request.user, 'User profile viewed', request)
-        return Response(serializer.data)
-
-    def put(self, request):
-        serializer = UserProfileSerializer(request.user, data=request.data, partial=True)
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
-        log_user_action(request.user, 'User profile updated', request)
-        return Response(serializer.data,status=status.HTTP_200_OK)
-
-    def delete(self, request):
-        log_user_action(request.user, 'User account deleted', request)
-        request.user.delete()
-        return Response({"message": "User deleted."}, status=status.HTTP_204_NO_CONTENT)
-
-
 class LogoutView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -119,6 +98,116 @@ class LogoutView(APIView):
         response.delete_cookie('access_token')
         response.delete_cookie('refresh_token')
         return response
+
+
+# ================================
+# Registration and Verification Logic
+# ================================
+
+class PreRegisterView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = RegistrationSerializer(data=request.data)
+        if serializer.is_valid():
+            email = serializer.validated_data.get('email')
+
+            if User.objects.filter(email=email).exists():
+                return Response({'error': 'A user with this email already exists.'}, status=status.HTTP_400_BAD_REQUEST)
+
+            signed_data = signer.sign_object(serializer.validated_data)
+            expiration_time = timezone.now() + timedelta(hours=1)
+
+            signed_data_with_expiration = signer.sign_object({
+                'data': signed_data,
+                'expiration': expiration_time.timestamp(),
+            })
+
+            verify_url = f"{settings.FRONTEND_URL}verify-email?token={signed_data_with_expiration}"
+
+            send_mail(
+                subject="Verify your email",
+                message=f"Click the link to verify your email: {verify_url}\n\nLink expires in an hour.",
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[email],
+                fail_silently=False,
+            )
+
+            return Response({'message': 'Verification email sent. Please check your inbox.'}, status=status.HTTP_200_OK)
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class VerifyAndRegisterView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        token = request.data.get('token')
+        if not token:
+            return Response({'error': 'Verification token is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            unsigned_token = signer.unsign_object(token)
+            signed_data = unsigned_token.get('data')
+            expiration_time = unsigned_token.get('expiration')
+            if expiration_time < timezone.now().timestamp():
+                return Response({'error': 'Token has expired.'}, status=status.HTTP_400_BAD_REQUEST)
+            user_data = signer.unsign_object(signed_data)
+            email = user_data.get('email')
+
+            if not email:
+                return Response({'error': 'Invalid verification token.'}, status=status.HTTP_400_BAD_REQUEST)
+
+            try:
+                user = User.objects.get(email=email)
+                if user.is_verified:
+                    return Response({'message': 'This email has already been verified. Verification is only allowed once.'}, status=status.HTTP_200_OK)
+                else:
+                    user.is_verified = True
+                    user.save()
+                    log_user_action(user, 'User verified', request)
+                    return Response({'message': 'Email successfully verified.'}, status=status.HTTP_200_OK)
+            except User.DoesNotExist:
+                serializer = RegistrationSerializer(data=user_data)
+                if serializer.is_valid():
+                    user = serializer.save()
+                    user.is_verified = True
+                    user.save()
+                    log_user_action(user, 'User registered and verified', request)
+                    return Response({'message': 'Email verified and registration successful.'}, status=status.HTTP_201_CREATED)
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        except BadSignature:
+            return Response({'error': 'Invalid or expired token.'}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+
+
+
+# ================================
+# User Profile Logic
+# ================================
+
+class CurrentUserView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        serializer = UserProfileSerializer(request.user)
+        log_user_action(request.user, 'User profile viewed', request)
+        return Response(serializer.data)
+
+    def put(self, request):
+        serializer = UserProfileSerializer(request.user, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        log_user_action(request.user, 'User profile updated', request)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def delete(self, request):
+        log_user_action(request.user, 'User account deleted', request)
+        request.user.delete()
+        return Response({"message": "User deleted."}, status=status.HTTP_204_NO_CONTENT)
 
 
 class UserProfileList(generics.ListAPIView):
@@ -147,28 +236,23 @@ class UserProfileDetail(generics.RetrieveUpdateDestroyAPIView):
             return Response({"detail": "User not found."}, status=status.HTTP_404_NOT_FOUND)
 
 
-class VerifyEmailView(APIView):
-    permission_classes = [AllowAny]
+# ================================
+# Account Management Logic
+# ================================
 
-    def get(self, request):
-        token = request.GET.get('token')
-        if not token:
-            return Response({'error': 'Token is required'}, status=status.HTTP_400_BAD_REQUEST)
+class DeactivateAccountView(APIView):
+    permission_classes = [IsAuthenticated]
 
-        try:
-            email = signer.unsign(token)
-            user = User.objects.get(email=email)
-            if user.is_verified:
-                return Response({'message': 'Email is already verified'}, status=status.HTTP_400_BAD_REQUEST)
+    def post(self, request):
+        request.user.is_active = False
+        request.user.save()
+        log_user_action(request.user, 'Account deactivated', request)
+        return Response({'message': 'Account deactivated successfully'}, status=status.HTTP_200_OK)
 
-            user.is_verified = True
-            user.save()
-            log_user_action(user, 'Email verified', request)
-            return Response({'message': 'Email verified successfully'}, status=status.HTTP_200_OK)
 
-        except (BadSignature, User.DoesNotExist):
-            return Response({'error': 'Invalid or expired token'}, status=status.HTTP_400_BAD_REQUEST)
-
+# ================================
+# Password Reset Logic
+# ================================
 
 class PasswordResetView(APIView):
     permission_classes = [AllowAny]
@@ -198,7 +282,7 @@ class PasswordResetView(APIView):
 
         except User.DoesNotExist:
             return Response({'error': 'User with this email does not exist'}, status=status.HTTP_404_NOT_FOUND)
-        
+
         except Exception as e:
             return Response({'error': 'Failed to send password reset email'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -223,13 +307,3 @@ class PasswordResetConfirmView(APIView):
 
         except (BadSignature, User.DoesNotExist):
             return Response({'error': 'Invalid or expired token'}, status=status.HTTP_400_BAD_REQUEST)
-
-
-class DeactivateAccountView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def post(self, request):
-        request.user.is_active = False
-        request.user.save()
-        log_user_action(request.user, 'Account deactivated', request)
-        return Response({'message': 'Account deactivated successfully'}, status=status.HTTP_200_OK)
