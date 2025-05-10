@@ -11,6 +11,7 @@ from .views import (
     CookieTokenRefreshView,
     CurrentUserView,
     PreRegisterView,  
+    ImpersonateUser
 )
 
 urlpatterns = [
@@ -18,6 +19,7 @@ urlpatterns = [
     path('token/refresh/', CookieTokenRefreshView.as_view(), name='token_refresh'),
     path('me/', CurrentUserView.as_view(), name='current_user'),
     path('logout/', LogoutView.as_view(), name='logout'),
+    path('impersonate/', ImpersonateUser.as_view(), name='impersonate-noraml-user'),
 
     path('profiles/', UserProfileList.as_view(), name='user_profile'),
     path('profiles/<int:pk>/', UserProfileDetail.as_view(), name='user_profile_detail'), 

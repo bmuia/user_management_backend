@@ -13,10 +13,11 @@ from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 from django.core.mail import send_mail
 from django.utils import timezone
 from django.conf import settings
-from django.contrib.auth import authenticate, get_user_model
+from django.contrib.auth import authenticate, get_user_model,login
 from django.core.signing import BadSignature, Signer, TimestampSigner
 from django.db import transaction
 from django.db.models import F
+from django.shortcuts import get_object_or_404
 
 
 
@@ -307,3 +308,32 @@ class PasswordResetConfirmView(APIView):
 
         except (BadSignature, User.DoesNotExist):
             return Response({'error': 'Invalid or expired token'}, status=status.HTTP_400_BAD_REQUEST)
+        
+
+
+class ImpersonateUser(APIView):
+    permission_classes = [IsAdminUser]
+
+    def post(self, request):
+        email = request.data.get('email')
+        if not email:
+            return Response({"error": "email is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        user = get_object_or_404(User, email=email)
+
+        login(request, user)
+
+        # Temporarily set cookies for the impersonated user (admin's cookies are replaced with this user's cookies)
+        access_token = RefreshToken.for_user(user).access_token
+        refresh_token = str(RefreshToken.for_user(user))
+
+        # Set cookies for impersonation session
+        expires_at = timezone.now() + timedelta(hours=6)
+        response = Response({
+            "message": f"You're now impersonating {user.email}."
+        }, status=status.HTTP_202_ACCEPTED)
+
+        response.set_cookie('access_token', str(access_token), expires=expires_at, secure=True, httponly=True, samesite='None', path='/')
+        response.set_cookie('refresh_token', refresh_token, expires=expires_at, secure=True, httponly=True, samesite='None', path='/')
+
+        return response
