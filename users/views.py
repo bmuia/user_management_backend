@@ -24,6 +24,7 @@ from django.shortcuts import get_object_or_404
 # Local Imports
 from .serializers import RegistrationSerializer, LoginSerializer, UserProfileSerializer
 from userlogs.utils import log_user_action
+from .social_providers import GoogleAuthProvider
 
 # Initialize User and Signer
 User = get_user_model()
@@ -335,5 +336,30 @@ class ImpersonateUser(APIView):
 
         response.set_cookie('access_token', str(access_token), expires=expires_at, secure=True, httponly=True, samesite='None', path='/')
         response.set_cookie('refresh_token', refresh_token, expires=expires_at, secure=True, httponly=True, samesite='None', path='/')
+
+        return response
+    
+class GoogleLoginView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        token = request.data.get("id_token")
+        if not token:
+            return Response({"error": "ID token is required"}, status=400)
+
+        google_data, error = GoogleAuthProvider.verify_token(token)
+        if error:
+            return Response({"error": error}, status=400)
+
+        if not google_data["verified"]:
+            return Response({"error": "Google account is not verified"}, status=403)
+
+        user = GoogleAuthProvider.authenticate_or_create_user(google_data)
+        tokens = GoogleAuthProvider.generate_tokens(user)
+
+        response = Response({"message": "Google login successful"}, status=200)
+        expires_at = timezone.now() + timedelta(hours=6)
+        response.set_cookie('access_token', tokens["access"], expires=expires_at, secure=True, httponly=True, samesite='None', path='/')
+        response.set_cookie('refresh_token', tokens["refresh"], expires=expires_at, secure=True, httponly=True, samesite='None', path='/')
 
         return response

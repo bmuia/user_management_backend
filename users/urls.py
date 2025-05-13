@@ -11,12 +11,14 @@ from .views import (
     CookieTokenRefreshView,
     CurrentUserView,
     PreRegisterView,  
-    ImpersonateUser
+    ImpersonateUser,
+    GoogleLoginView
 )
 
 urlpatterns = [
     path('login/', LoginView.as_view(), name='login'),
     path('token/refresh/', CookieTokenRefreshView.as_view(), name='token_refresh'),
+    path('google/', GoogleLoginView.as_view(), name='google-login'),
     path('me/', CurrentUserView.as_view(), name='current_user'),
     path('logout/', LogoutView.as_view(), name='logout'),
     path('impersonate/', ImpersonateUser.as_view(), name='impersonate-noraml-user'),
