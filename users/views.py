@@ -21,10 +21,11 @@ from django.shortcuts import get_object_or_404
 
 
 
+
 # Local Imports
-from .serializers import RegistrationSerializer, LoginSerializer, UserProfileSerializer
+from .serializers import RegistrationSerializer, LoginSerializer, UserProfileSerializer, AdminUserUpdateSerializer
 from userlogs.utils import log_user_action
-from .social_providers import GoogleAuthProvider
+
 
 # Initialize User and Signer
 User = get_user_model()
@@ -34,7 +35,7 @@ signer = Signer()
 # Authentication and User Logic
 # ================================
 
-class LoginView(APIView):
+class LoginView(generics.CreateAPIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
@@ -42,27 +43,34 @@ class LoginView(APIView):
         if serializer.is_valid():
             email = serializer.validated_data['email']
             password = serializer.validated_data['password']
-            user = authenticate(request, email=email, password=password)
-            if user:
-                user.last_login = timezone.now()
-                user.save()
 
-                log_user_action(user, 'User logged in', request)
+            user = authenticate(email=email, password=password)
 
-                refresh = RefreshToken.for_user(user)
-                access_token = str(refresh.access_token)
-                refresh_token = str(refresh)
+            if user is not None:
+                if not user.is_active:
+                    return Response(
+                        {'detail': 'User account is inactive.'},
+                        status=status.HTTP_403_FORBIDDEN
+                    )
 
-                response = Response({'message': 'Login successful'}, status=status.HTTP_200_OK)
+                try:
+                    refresh = RefreshToken.for_user(user)
+                    access_token = str(refresh.access_token)
+                    refresh_token = str(refresh)
 
-                expires_at = timezone.now() + timedelta(hours=6)
-                response.set_cookie('access_token', access_token, expires=expires_at, secure=True, httponly=True, samesite='None', path='/')
-                response.set_cookie('refresh_token', refresh_token, expires=expires_at, secure=True, httponly=True, samesite='None', path='/')
-                return response
+                    response_data = {
+                        'access': access_token,
+                        'refresh': refresh_token,
+                    }
+                    log_user_action(user, 'User logged in', request)
+                    return Response(response_data, status=status.HTTP_200_OK)
 
-            return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
+                except Exception as e:
+                    return Response({'detail': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+            return Response({'detail': 'Invalid credentials.'}, status=status.HTTP_401_UNAUTHORIZED)
+
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
 
 class CookieTokenRefreshView(TokenRefreshView):
     def post(self, request, *args, **kwargs):
@@ -86,20 +94,22 @@ class LogoutView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        response = Response({'message': 'Logout successful'}, status=status.HTTP_200_OK)
-        refresh_token = request.COOKIES.get('refresh_token')
+        refresh_token = request.data.get('refresh_token')
+        
+        if not refresh_token:
+            return Response({'detail': 'Refresh token is required.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        if refresh_token:
-            try:
-                token = RefreshToken(refresh_token)
-                token.blacklist()
-            except TokenError:
-                pass
+        try:
+            token = RefreshToken(refresh_token)
+            token.blacklist()
+        except TokenError:
+            return Response({'detail': 'Invalid or expired refresh token.'}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Optional: log user action if you have a custom logger
         log_user_action(request.user, 'User logged out', request)
-        response.delete_cookie('access_token')
-        response.delete_cookie('refresh_token')
-        return response
+
+        return Response({'message': 'Logout successful'}, status=status.HTTP_200_OK)
+
 
 
 # ================================
@@ -208,8 +218,9 @@ class CurrentUserView(APIView):
 
     def delete(self, request):
         log_user_action(request.user, 'User account deleted', request)
-        request.user.delete()
-        return Response({"message": "User deleted."}, status=status.HTTP_204_NO_CONTENT)
+        request.user.is_active = False
+        request.user.save()
+        return Response({"message": "User account deactivated."}, status=status.HTTP_204_NO_CONTENT)
 
 
 class UserProfileList(generics.ListAPIView):
@@ -312,54 +323,43 @@ class PasswordResetConfirmView(APIView):
         
 
 
-class ImpersonateUser(APIView):
+class AdminUserRegister(generics.CreateAPIView):
     permission_classes = [IsAdminUser]
 
     def post(self, request):
-        email = request.data.get('email')
-        if not email:
-            return Response({"error": "email is required."}, status=status.HTTP_400_BAD_REQUEST)
+        serializer = RegistrationSerializer(data=request.data)
 
-        user = get_object_or_404(User, email=email)
-
-        login(request, user)
-
-        # Temporarily set cookies for the impersonated user (admin's cookies are replaced with this user's cookies)
-        access_token = RefreshToken.for_user(user).access_token
-        refresh_token = str(RefreshToken.for_user(user))
-
-        # Set cookies for impersonation session
-        expires_at = timezone.now() + timedelta(hours=6)
-        response = Response({
-            "message": f"You're now impersonating {user.email}."
-        }, status=status.HTTP_202_ACCEPTED)
-
-        response.set_cookie('access_token', str(access_token), expires=expires_at, secure=True, httponly=True, samesite='None', path='/')
-        response.set_cookie('refresh_token', refresh_token, expires=expires_at, secure=True, httponly=True, samesite='None', path='/')
-
-        return response
+        if serializer.is_valid():
+            user = serializer.save()
+            user.is_verified = True
+            user.save()
+            return Response({'message': 'User Created'}, status=status.HTTP_201_CREATED)
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
-class GoogleLoginView(APIView):
-    permission_classes = [AllowAny]
+class AdminUserUpdateView(generics.UpdateAPIView):
+    permission_classes = [IsAdminUser]
+    queryset = User.objects.all()
+    lookup_field = 'pk'
+    serializer_class = AdminUserUpdateSerializer
 
-    def post(self, request):
-        token = request.data.get("id_token")
-        if not token:
-            return Response({"error": "ID token is required"}, status=400)
+    def update(self, request, *args, **kwargs):
+        """
+        Update method that handles user deactivation and uses the serializer's update method.
+        """
+        user = self.get_object()
 
-        google_data, error = GoogleAuthProvider.verify_token(token)
-        if error:
-            return Response({"error": error}, status=400)
+        if not user.is_active:
+            return Response(
+                {"error": "Cannot update deactivated user."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
-        if not google_data["verified"]:
-            return Response({"error": "Google account is not verified"}, status=403)
-
-        user = GoogleAuthProvider.authenticate_or_create_user(google_data)
-        tokens = GoogleAuthProvider.generate_tokens(user)
-
-        response = Response({"message": "Google login successful"}, status=200)
-        expires_at = timezone.now() + timedelta(hours=6)
-        response.set_cookie('access_token', tokens["access"], expires=expires_at, secure=True, httponly=True, samesite='None', path='/')
-        response.set_cookie('refresh_token', tokens["refresh"], expires=expires_at, secure=True, httponly=True, samesite='None', path='/')
-
-        return response
+        serializer = self.get_serializer(user, data=request.data, partial=True)  # Get serializer instance
+        if serializer.is_valid():
+            serializer.save() # call the serializer save. This will call the update method on the serializer
+            return Response(
+                {"message": "User updated successfully."},
+                status=status.HTTP_200_OK
+            )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
