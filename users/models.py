@@ -51,6 +51,7 @@ class CustomUser(AbstractUser):
     country = models.CharField(max_length=100, blank=True, null=True)
     referral_code = models.CharField(max_length=50, blank=True, null=True)
     bio = models.TextField(blank=True, null=True) 
+    
 
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = []

@@ -11,17 +11,16 @@ from .views import (
     CookieTokenRefreshView,
     CurrentUserView,
     PreRegisterView,  
-    ImpersonateUser,
-    GoogleLoginView
+    AdminUserRegister,
+    AdminUserUpdateView
 )
 
 urlpatterns = [
     path('login/', LoginView.as_view(), name='login'),
     path('token/refresh/', CookieTokenRefreshView.as_view(), name='token_refresh'),
-    path('google/', GoogleLoginView.as_view(), name='google-login'),
     path('me/', CurrentUserView.as_view(), name='current_user'),
     path('logout/', LogoutView.as_view(), name='logout'),
-    path('impersonate/', ImpersonateUser.as_view(), name='impersonate-noraml-user'),
+
 
     path('profiles/', UserProfileList.as_view(), name='user_profile'),
     path('profiles/<int:pk>/', UserProfileDetail.as_view(), name='user_profile_detail'), 
@@ -30,4 +29,7 @@ urlpatterns = [
     path('reset-password/', PasswordResetView.as_view(), name='password_reset'),    
     path('password-reset-confirm/', PasswordResetConfirmView.as_view(), name='password_reset_confirm'),
     path('deactivate-account/', DeactivateAccountView.as_view(), name='deactivate_account'),
+
+    path('admin/register/user/',AdminUserRegister.as_view(), name='admin-register-user'),
+    path('admin/<int:pk>/update/', AdminUserUpdateView.as_view(), name='update-user')
 ]

@@ -38,7 +38,33 @@ class LoginSerializer(serializers.ModelSerializer):
 class UserProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ('email', 'full_name','profile_picture','is_verified', 'is_active', 'is_staff', 'is_verified','date_of_birth', 'phone_number', 'address', 'gender', 'country', 'referral_code', 'bio')
-        read_only_fields = ('is_active', 'is_verified', 'is_staff')
+        fields = ('email', 'full_name','profile_picture','is_verified', 'is_active', 'is_staff', 'is_verified','date_of_birth', 'phone_number', 'address', 'gender', 'country', 'referral_code', 'bio','date_joined','last_login')
+        read_only_fields = ('is_active', 'is_verified', 'is_staff','date_joined','last_login')
+
+class AdminUserUpdateSerializer(serializers.ModelSerializer):
+    
+    class Meta:
+        model = User
+        fields = [
+            'is_active',
+            'is_staff',
+            'is_verified',
+            'password',
+        ]
+        extra_kwargs = {
+            'password': {'write_only': True, 'required': False},
+        }
+
+    def update(self, instance, validated_data):
+        """
+        Update a user instance with the validated data.  Handles password hashing.
+        """
+        password = validated_data.pop('password', None)  # Remove password, handle separately
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)  # Update other fields
+        if password:
+            instance.set_password(password)  # Hash the password
+        instance.save()  # Save the changes to the database
+        return instance
 
         
