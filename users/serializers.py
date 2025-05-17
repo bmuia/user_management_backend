@@ -38,7 +38,7 @@ class LoginSerializer(serializers.ModelSerializer):
 class UserProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ('email', 'full_name','profile_picture','is_verified', 'is_active', 'is_staff', 'is_verified','date_of_birth', 'phone_number', 'address', 'gender', 'country', 'referral_code', 'bio','date_joined','last_login')
+        fields = ('id','email', 'full_name','profile_picture','is_verified', 'is_active', 'is_staff', 'is_verified','date_of_birth', 'phone_number', 'address', 'gender', 'country', 'referral_code', 'bio','date_joined','last_login')
         read_only_fields = ('is_active', 'is_verified', 'is_staff','date_joined','last_login')
 
 class AdminUserUpdateSerializer(serializers.ModelSerializer):

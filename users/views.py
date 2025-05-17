@@ -13,27 +13,18 @@ from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 from django.core.mail import send_mail
 from django.utils import timezone
 from django.conf import settings
-from django.contrib.auth import authenticate, get_user_model,login
+from django.contrib.auth import authenticate, get_user_model, login
 from django.core.signing import BadSignature, Signer, TimestampSigner
 from django.db import transaction
 from django.db.models import F
 from django.shortcuts import get_object_or_404
 
-
-
-
 # Local Imports
 from .serializers import RegistrationSerializer, LoginSerializer, UserProfileSerializer, AdminUserUpdateSerializer
-from userlogs.utils import log_user_action
-
 
 # Initialize User and Signer
 User = get_user_model()
 signer = Signer()
-
-# ================================
-# Authentication and User Logic
-# ================================
 
 class LoginView(generics.CreateAPIView):
     permission_classes = [AllowAny]
@@ -62,7 +53,6 @@ class LoginView(generics.CreateAPIView):
                         'access': access_token,
                         'refresh': refresh_token,
                     }
-                    log_user_action(user, 'User logged in', request)
                     return Response(response_data, status=status.HTTP_200_OK)
 
                 except Exception as e:
@@ -72,30 +62,12 @@ class LoginView(generics.CreateAPIView):
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-class CookieTokenRefreshView(TokenRefreshView):
-    def post(self, request, *args, **kwargs):
-        refresh_token = request.COOKIES.get('refresh_token')
-        if not refresh_token:
-            return Response({'error': 'Refresh token not provided'}, status=status.HTTP_401_UNAUTHORIZED)
-
-        serializer = self.get_serializer(data={'refresh': refresh_token})
-        try:
-            serializer.is_valid(raise_exception=True)
-        except (InvalidToken, TokenError):
-            return Response({'error': 'Invalid or blacklisted refresh token'}, status=status.HTTP_401_UNAUTHORIZED)
-
-        access_token = serializer.validated_data['access']
-        response = Response({'access': access_token}, status=status.HTTP_200_OK)
-        response.set_cookie('access_token', access_token, expires=datetime.now(timezone.utc) + timedelta(hours=6), secure=True, httponly=True, samesite='None')
-        return response
-
-
 class LogoutView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
         refresh_token = request.data.get('refresh_token')
-        
+
         if not refresh_token:
             return Response({'detail': 'Refresh token is required.'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -105,16 +77,7 @@ class LogoutView(APIView):
         except TokenError:
             return Response({'detail': 'Invalid or expired refresh token.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Optional: log user action if you have a custom logger
-        log_user_action(request.user, 'User logged out', request)
-
         return Response({'message': 'Logout successful'}, status=status.HTTP_200_OK)
-
-
-
-# ================================
-# Registration and Verification Logic
-# ================================
 
 class PreRegisterView(APIView):
     permission_classes = [AllowAny]
@@ -176,7 +139,6 @@ class VerifyAndRegisterView(APIView):
                 else:
                     user.is_verified = True
                     user.save()
-                    log_user_action(user, 'User verified', request)
                     return Response({'message': 'Email successfully verified.'}, status=status.HTTP_200_OK)
             except User.DoesNotExist:
                 serializer = RegistrationSerializer(data=user_data)
@@ -184,7 +146,6 @@ class VerifyAndRegisterView(APIView):
                     user = serializer.save()
                     user.is_verified = True
                     user.save()
-                    log_user_action(user, 'User registered and verified', request)
                     return Response({'message': 'Email verified and registration successful.'}, status=status.HTTP_201_CREATED)
                 return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -193,35 +154,23 @@ class VerifyAndRegisterView(APIView):
         except Exception as e:
             return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-
-
-
-
-# ================================
-# User Profile Logic
-# ================================
-
 class CurrentUserView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
         serializer = UserProfileSerializer(request.user)
-        log_user_action(request.user, 'User profile viewed', request)
         return Response(serializer.data)
 
     def put(self, request):
         serializer = UserProfileSerializer(request.user, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
-        log_user_action(request.user, 'User profile updated', request)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     def delete(self, request):
-        log_user_action(request.user, 'User account deleted', request)
         request.user.is_active = False
         request.user.save()
         return Response({"message": "User account deactivated."}, status=status.HTTP_204_NO_CONTENT)
-
 
 class UserProfileList(generics.ListAPIView):
     serializer_class = UserProfileSerializer
@@ -233,39 +182,6 @@ class UserProfileList(generics.ListAPIView):
             serializer = self.serializer_class(users, many=True)
             return Response(serializer.data)
         return Response({"detail": "Permission denied."}, status=status.HTTP_403_FORBIDDEN)
-
-
-class UserProfileDetail(generics.RetrieveUpdateDestroyAPIView):
-    queryset = User.objects.all()
-    serializer_class = UserProfileSerializer
-    permission_classes = [IsAuthenticated, IsAdminUser]
-
-    def get(self, request, pk):
-        try:
-            user = self.get_object()
-            serializer = self.serializer_class(user)
-            return Response(serializer.data)
-        except User.DoesNotExist:
-            return Response({"detail": "User not found."}, status=status.HTTP_404_NOT_FOUND)
-
-
-# ================================
-# Account Management Logic
-# ================================
-
-class DeactivateAccountView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def post(self, request):
-        request.user.is_active = False
-        request.user.save()
-        log_user_action(request.user, 'Account deactivated', request)
-        return Response({'message': 'Account deactivated successfully'}, status=status.HTTP_200_OK)
-
-
-# ================================
-# Password Reset Logic
-# ================================
 
 class PasswordResetView(APIView):
     permission_classes = [AllowAny]
@@ -289,8 +205,6 @@ class PasswordResetView(APIView):
                 [user.email],
                 fail_silently=False,
             )
-
-            log_user_action(user, 'Password reset email sent', request)
             return Response({'message': 'Password reset email sent'}, status=status.HTTP_200_OK)
 
         except User.DoesNotExist:
@@ -298,7 +212,6 @@ class PasswordResetView(APIView):
 
         except Exception as e:
             return Response({'error': 'Failed to send password reset email'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
 
 class PasswordResetConfirmView(APIView):
     permission_classes = [AllowAny]
@@ -315,13 +228,10 @@ class PasswordResetConfirmView(APIView):
             user = User.objects.get(email=email)
             user.set_password(new_password)
             user.save()
-            log_user_action(user, 'Password reset confirmed', request)
             return Response({'message': 'Password reset successfully'}, status=status.HTTP_200_OK)
 
         except (BadSignature, User.DoesNotExist):
             return Response({'error': 'Invalid or expired token'}, status=status.HTTP_400_BAD_REQUEST)
-        
-
 
 class AdminUserRegister(generics.CreateAPIView):
     permission_classes = [IsAdminUser]
@@ -334,9 +244,9 @@ class AdminUserRegister(generics.CreateAPIView):
             user.is_verified = True
             user.save()
             return Response({'message': 'User Created'}, status=status.HTTP_201_CREATED)
-        
+
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
+
 class AdminUserUpdateView(generics.UpdateAPIView):
     permission_classes = [IsAdminUser]
     queryset = User.objects.all()
@@ -344,20 +254,10 @@ class AdminUserUpdateView(generics.UpdateAPIView):
     serializer_class = AdminUserUpdateSerializer
 
     def update(self, request, *args, **kwargs):
-        """
-        Update method that handles user deactivation and uses the serializer's update method.
-        """
         user = self.get_object()
-
-        if not user.is_active:
-            return Response(
-                {"error": "Cannot update deactivated user."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        serializer = self.get_serializer(user, data=request.data, partial=True)  # Get serializer instance
+        serializer = self.get_serializer(user, data=request.data, partial=True)
         if serializer.is_valid():
-            serializer.save() # call the serializer save. This will call the update method on the serializer
+            serializer.save()
             return Response(
                 {"message": "User updated successfully."},
                 status=status.HTTP_200_OK
